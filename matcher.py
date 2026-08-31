@@ -170,6 +170,68 @@ def calculate_matches(
     return pd.DataFrame(matches)
 
 
+def build_results(
+    matches: pd.DataFrame,
+) -> pd.DataFrame:
+    results = matches.copy()
+
+    no_match_mask = results["status"] == "NO_MATCH"
+
+    results.loc[
+        no_match_mask,
+        "best_code",
+    ] = "НЕТ СООТВЕТСТВИЯ"
+
+    results.loc[
+        no_match_mask,
+        "best_position",
+    ] = ""
+
+    results["review_text"] = results["review_required"].map(
+        {
+            True: "да",
+            False: "нет",
+        }
+    )
+
+    results["best_score"] = results["best_score"].round(4)
+
+    results = results[
+        [
+            "id",
+            "raw_name",
+            "best_code",
+            "best_position",
+            "best_score",
+            "review_text",
+        ]
+    ]
+
+    return results.rename(
+        columns={
+            "raw_name": "исходное наименование",
+            "best_code": "код",
+            "best_position": "наименование по классификатору",
+            "best_score": "уверенность",
+            "review_text": "требует проверки",
+        }
+    )
+
+
+def save_results(
+    results: pd.DataFrame,
+    output_path: str | Path,
+) -> None:
+    output_path = Path(output_path)
+
+    results.to_csv(
+        output_path,
+        sep=";",
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+
 def evaluate(
     classifier: pd.DataFrame,
 ) -> None:
@@ -297,28 +359,20 @@ def main() -> None:
         classifier,
     )
 
+    results = build_results(matches)
+
+    save_results(
+        results,
+        args.output,
+    )
+
     print(f"Loaded {len(raw_positions)} raw positions.")
     print(f"Loaded {len(classifier)} classifier positions.")
+    print(f"Results saved to: {args.output}")
 
     print()
     print("Status distribution:")
     print(matches["status"].value_counts().to_string())
-
-    print()
-    print("Review cases:")
-    print(
-        matches[matches["review_required"]][
-            [
-                "raw_name",
-                "best_position",
-                "best_score",
-                "second_position",
-                "second_score",
-                "margin",
-                "status",
-            ]
-        ].to_string(index=False)
-    )
 
     evaluate(classifier)
 
