@@ -11,6 +11,10 @@ DATA_DIR = Path(__file__).resolve().parent / "data"
 CLASSIFIER_PATH = DATA_DIR / "classifier.csv"
 LABELED_SAMPLE_PATH = DATA_DIR / "labeled_sample.csv"
 
+NO_MATCH_THRESHOLD = 0.35
+REVIEW_SCORE_THRESHOLD = 0.45
+MARGIN_THRESHOLD = 0.05
+
 CLASSIFIER_COLUMNS = {
     "Код": "code",
     "Наименование должности по классификатору": "position",
@@ -99,6 +103,19 @@ def normalize_position(value: str) -> str:
     return value.strip()
 
 
+def make_decision(
+    best_score: float,
+    margin: float,
+) -> tuple[str, bool]:
+    if best_score < NO_MATCH_THRESHOLD:
+        return "NO_MATCH", True
+
+    if best_score < REVIEW_SCORE_THRESHOLD or margin < MARGIN_THRESHOLD:
+        return "REVIEW", True
+
+    return "MATCH", False
+
+
 def calculate_matches(
     raw_positions: pd.DataFrame,
     classifier: pd.DataFrame,
@@ -127,6 +144,12 @@ def calculate_matches(
 
         best_score = scores[best_index]
         second_score = scores[second_index]
+        margin = best_score - second_score
+
+        status, review_required = make_decision(
+            best_score,
+            margin,
+        )
 
         matches.append(
             {
@@ -138,7 +161,9 @@ def calculate_matches(
                 "best_score": best_score,
                 "second_position": classifier.iloc[second_index]["position"],
                 "second_score": second_score,
-                "margin": best_score - second_score,
+                "margin": margin,
+                "status": status,
+                "review_required": review_required,
             }
         )
 
@@ -214,6 +239,8 @@ def evaluate(
                 "second_position",
                 "second_score",
                 "margin",
+                "status",
+                "review_required",
             ]
         ]
         .sort_values(
@@ -239,6 +266,8 @@ def evaluate(
                     "second_position",
                     "second_score",
                     "margin",
+                    "status",
+                    "review_required",
                 ]
             ].to_string(index=False)
         )
@@ -271,8 +300,14 @@ def main() -> None:
     print(f"Loaded {len(raw_positions)} raw positions.")
     print(f"Loaded {len(classifier)} classifier positions.")
 
+    print()
+    print("Status distribution:")
+    print(matches["status"].value_counts().to_string())
+
+    print()
+    print("Review cases:")
     print(
-        matches[
+        matches[matches["review_required"]][
             [
                 "raw_name",
                 "best_position",
@@ -280,10 +315,9 @@ def main() -> None:
                 "second_position",
                 "second_score",
                 "margin",
+                "status",
             ]
-        ]
-        .head(30)
-        .to_string(index=False)
+        ].to_string(index=False)
     )
 
     evaluate(classifier)
