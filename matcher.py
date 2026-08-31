@@ -261,65 +261,55 @@ def evaluate(
         how="inner",
     )
 
-    evaluation["is_correct"] = evaluation["best_code"].astype(str) == evaluation[
-        "expected_code"
-    ].astype(str)
+    expected_no_match = (
+        evaluation["expected_code"].isna() | evaluation["expected_position"].isna()
+    )
 
-    accuracy = evaluation["is_correct"].mean()
+    evaluation["top1_correct"] = ~expected_no_match & (
+        evaluation["best_code"].astype(str) == evaluation["expected_code"].astype(str)
+    )
 
-    correct = evaluation[evaluation["is_correct"]]
-    errors = evaluation[~evaluation["is_correct"]]
+    evaluation["system_correct"] = (
+        expected_no_match & (evaluation["status"] == "NO_MATCH")
+    ) | (
+        ~expected_no_match
+        & (
+            evaluation["best_code"].astype(str)
+            == evaluation["expected_code"].astype(str)
+        )
+        & (evaluation["status"] != "NO_MATCH")
+    )
+
+    top1_accuracy = evaluation["top1_correct"].mean()
+    system_accuracy = evaluation["system_correct"].mean()
+
+    review_count = evaluation["review_required"].sum()
+    no_match_count = (evaluation["status"] == "NO_MATCH").sum()
+
+    incorrect = evaluation[~evaluation["system_correct"]]
 
     print()
     print("Evaluation:")
     print(f"Labeled sample size: {len(evaluation)}")
-    print(f"Correct matches: {len(correct)}")
-    print(f"Errors: {len(errors)}")
-    print(f"Top-1 accuracy: {accuracy:.2%}")
+    print(f"Top-1 accuracy: {top1_accuracy:.2%}")
+    print(f"System accuracy: {system_accuracy:.2%}")
+    print(f"Correct system decisions: " f"{evaluation['system_correct'].sum()}")
+    print(f"Incorrect system decisions: {len(incorrect)}")
+    print(f"Review required: {review_count}")
+    print(f"No match detected: {no_match_count}")
 
     print()
-    print("Correct match score statistics:")
-    print(
-        correct[
-            [
-                "best_score",
-                "margin",
-            ]
-        ]
-        .describe()
-        .to_string()
-    )
+    print("Thresholds:")
+    print(f"No-match score: < {NO_MATCH_THRESHOLD}")
+    print(f"Review score: < {REVIEW_SCORE_THRESHOLD}")
+    print(f"Review margin: < {MARGIN_THRESHOLD}")
 
-    print()
-    print("Lowest-confidence correct matches:")
-    print(
-        correct[
-            [
-                "raw_name",
-                "best_position",
-                "best_score",
-                "second_position",
-                "second_score",
-                "margin",
-                "status",
-                "review_required",
-            ]
-        ]
-        .sort_values(
-            [
-                "best_score",
-                "margin",
-            ]
-        )
-        .head(10)
-        .to_string(index=False)
-    )
-
-    if not errors.empty:
+    if not incorrect.empty:
         print()
-        print("Errors:")
+        print("Incorrect system decisions:")
+
         print(
-            errors[
+            incorrect[
                 [
                     "raw_name",
                     "expected_position",
