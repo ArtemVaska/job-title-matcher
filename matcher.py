@@ -7,7 +7,9 @@ import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
-CLASSIFIER_PATH = Path(__file__).resolve().parent / "data" / "classifier.csv"
+DATA_DIR = Path(__file__).resolve().parent / "data"
+CLASSIFIER_PATH = DATA_DIR / "classifier.csv"
+LABELED_SAMPLE_PATH = DATA_DIR / "labeled_sample.csv"
 
 CLASSIFIER_COLUMNS = {
     "Код": "code",
@@ -17,6 +19,13 @@ CLASSIFIER_COLUMNS = {
 INPUT_COLUMNS = {
     "id": "id",
     "Исходное наименование должности": "raw_name",
+}
+
+LABELED_COLUMNS = {
+    "id": "id",
+    "Исходное наименование должности": "raw_name",
+    "Правильный код": "expected_code",
+    "Наименование по классификатору": "expected_position",
 }
 
 
@@ -116,6 +125,9 @@ def calculate_matches(
         best_index = top_indices[0]
         second_index = top_indices[1]
 
+        best_score = scores[best_index]
+        second_score = scores[second_index]
+
         matches.append(
             {
                 "id": raw_positions.iloc[row_index]["id"],
@@ -123,14 +135,113 @@ def calculate_matches(
                 "normalized_name": raw_positions.iloc[row_index]["normalized_name"],
                 "best_code": classifier.iloc[best_index]["code"],
                 "best_position": classifier.iloc[best_index]["position"],
-                "best_score": scores[best_index],
+                "best_score": best_score,
                 "second_position": classifier.iloc[second_index]["position"],
-                "second_score": scores[second_index],
-                "margin": scores[best_index] - scores[second_index],
+                "second_score": second_score,
+                "margin": best_score - second_score,
             }
         )
 
     return pd.DataFrame(matches)
+
+
+def evaluate(
+    classifier: pd.DataFrame,
+) -> None:
+    labeled_sample = load_csv(
+        LABELED_SAMPLE_PATH,
+        LABELED_COLUMNS,
+    )
+
+    labeled_sample["normalized_name"] = labeled_sample["raw_name"].apply(
+        normalize_position
+    )
+
+    matches = calculate_matches(
+        labeled_sample,
+        classifier,
+    )
+
+    evaluation = labeled_sample[
+        [
+            "id",
+            "expected_code",
+            "expected_position",
+        ]
+    ].merge(
+        matches,
+        on="id",
+        how="inner",
+    )
+
+    evaluation["is_correct"] = evaluation["best_code"].astype(str) == evaluation[
+        "expected_code"
+    ].astype(str)
+
+    accuracy = evaluation["is_correct"].mean()
+
+    correct = evaluation[evaluation["is_correct"]]
+    errors = evaluation[~evaluation["is_correct"]]
+
+    print()
+    print("Evaluation:")
+    print(f"Labeled sample size: {len(evaluation)}")
+    print(f"Correct matches: {len(correct)}")
+    print(f"Errors: {len(errors)}")
+    print(f"Top-1 accuracy: {accuracy:.2%}")
+
+    print()
+    print("Correct match score statistics:")
+    print(
+        correct[
+            [
+                "best_score",
+                "margin",
+            ]
+        ]
+        .describe()
+        .to_string()
+    )
+
+    print()
+    print("Lowest-confidence correct matches:")
+    print(
+        correct[
+            [
+                "raw_name",
+                "best_position",
+                "best_score",
+                "second_position",
+                "second_score",
+                "margin",
+            ]
+        ]
+        .sort_values(
+            [
+                "best_score",
+                "margin",
+            ]
+        )
+        .head(10)
+        .to_string(index=False)
+    )
+
+    if not errors.empty:
+        print()
+        print("Errors:")
+        print(
+            errors[
+                [
+                    "raw_name",
+                    "expected_position",
+                    "best_position",
+                    "best_score",
+                    "second_position",
+                    "second_score",
+                    "margin",
+                ]
+            ].to_string(index=False)
+        )
 
 
 def main() -> None:
@@ -174,6 +285,8 @@ def main() -> None:
         .head(30)
         .to_string(index=False)
     )
+
+    evaluate(classifier)
 
 
 if __name__ == "__main__":
