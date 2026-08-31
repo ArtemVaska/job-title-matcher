@@ -4,6 +4,8 @@ import unicodedata
 from pathlib import Path
 
 import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 CLASSIFIER_PATH = Path(__file__).resolve().parent / "data" / "classifier.csv"
 
@@ -88,6 +90,49 @@ def normalize_position(value: str) -> str:
     return value.strip()
 
 
+def calculate_matches(
+    raw_positions: pd.DataFrame,
+    classifier: pd.DataFrame,
+) -> pd.DataFrame:
+    vectorizer = TfidfVectorizer(
+        analyzer="char_wb",
+        ngram_range=(2, 5),
+    )
+
+    classifier_matrix = vectorizer.fit_transform(classifier["normalized_position"])
+
+    raw_matrix = vectorizer.transform(raw_positions["normalized_name"])
+
+    similarities = cosine_similarity(
+        raw_matrix,
+        classifier_matrix,
+    )
+
+    matches = []
+
+    for row_index, scores in enumerate(similarities):
+        top_indices = scores.argsort()[-2:][::-1]
+
+        best_index = top_indices[0]
+        second_index = top_indices[1]
+
+        matches.append(
+            {
+                "id": raw_positions.iloc[row_index]["id"],
+                "raw_name": raw_positions.iloc[row_index]["raw_name"],
+                "normalized_name": raw_positions.iloc[row_index]["normalized_name"],
+                "best_code": classifier.iloc[best_index]["code"],
+                "best_position": classifier.iloc[best_index]["position"],
+                "best_score": scores[best_index],
+                "second_position": classifier.iloc[second_index]["position"],
+                "second_score": scores[second_index],
+                "margin": scores[best_index] - scores[second_index],
+            }
+        )
+
+    return pd.DataFrame(matches)
+
+
 def main() -> None:
     args = parse_args()
 
@@ -107,11 +152,27 @@ def main() -> None:
 
     classifier["normalized_position"] = classifier["position"].apply(normalize_position)
 
+    matches = calculate_matches(
+        raw_positions,
+        classifier,
+    )
+
     print(f"Loaded {len(raw_positions)} raw positions.")
     print(f"Loaded {len(classifier)} classifier positions.")
 
     print(
-        raw_positions[["raw_name", "normalized_name"]].to_string(index=False)
+        matches[
+            [
+                "raw_name",
+                "best_position",
+                "best_score",
+                "second_position",
+                "second_score",
+                "margin",
+            ]
+        ]
+        .head(30)
+        .to_string(index=False)
     )
 
 
