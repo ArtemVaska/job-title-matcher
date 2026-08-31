@@ -1,4 +1,6 @@
 import argparse
+import re
+import unicodedata
 from pathlib import Path
 
 import pandas as pd
@@ -59,6 +61,33 @@ def load_csv(
     return df.rename(columns=columns)
 
 
+def normalize_position(value: str) -> str:
+    value = unicodedata.normalize("NFKC", value)
+    value = value.casefold()
+    value = value.replace("ё", "е")
+
+    # Qualification grades and categories do not affect matching.
+    value = re.sub(
+        r"\b\d+\s+(?:разряд\w*|категори\w*)\b",
+        " ",
+        value,
+    )
+    value = re.sub(
+        r"\b(?:разряд\w*|категори\w*)\s+\d+\b",
+        " ",
+        value,
+    )
+
+    # Normalize punctuation.
+    value = re.sub(r"[-–—/]", " ", value)
+    value = re.sub(r"[^\w\s]", " ", value)
+
+    # Normalize whitespace.
+    value = re.sub(r"\s+", " ", value)
+
+    return value.strip()
+
+
 def main() -> None:
     args = parse_args()
 
@@ -72,9 +101,18 @@ def main() -> None:
         CLASSIFIER_COLUMNS,
     )
 
+    raw_positions["normalized_name"] = raw_positions["raw_name"].apply(
+        normalize_position
+    )
+
+    classifier["normalized_position"] = classifier["position"].apply(normalize_position)
+
     print(f"Loaded {len(raw_positions)} raw positions.")
     print(f"Loaded {len(classifier)} classifier positions.")
-    print(f"Output: {args.output}")
+
+    print(
+        raw_positions[["raw_name", "normalized_name"]].to_string(index=False)
+    )
 
 
 if __name__ == "__main__":
