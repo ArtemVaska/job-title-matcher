@@ -268,7 +268,11 @@ def evaluate(
     )
 
     expected_no_match = (
-        evaluation["expected_code"].isna() | evaluation["expected_position"].isna()
+        evaluation["expected_code"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .eq("НЕТ СООТВЕТСТВИЯ")
     )
 
     evaluation["top1_correct"] = ~expected_no_match & (
