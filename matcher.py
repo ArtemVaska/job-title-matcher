@@ -52,6 +52,12 @@ def parse_args() -> argparse.Namespace:
         help="Path to the output CSV file. Default: results.csv.",
     )
 
+    parser.add_argument(
+        "--evaluation",
+        action="store_true",
+        help="Evaluate matching quality on the labeled sample.",
+    )
+
     return parser.parse_args()
 
 
@@ -362,9 +368,10 @@ def main() -> None:
 
     print()
     print("Status distribution:")
-    print(matches["status"].value_counts().to_string())
+    print(matches["status"].value_counts().to_string(header=False))
 
-    evaluate(classifier)
+    if args.evaluation:
+        evaluate(classifier)
 
 
 if __name__ == "__main__":
